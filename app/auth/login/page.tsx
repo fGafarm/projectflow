@@ -21,12 +21,20 @@ export default function LoginPage() {
       if (authMode === 'login') {
         const { error } = await signIn(formData.email, formData.password)
         if (error) throw error
+        router.push('/dashboard')
       } else {
         const { error } = await signUp(formData.email, formData.password, formData.name)
         if (error) throw error
+        setError('確認メールを送信しました。メールを確認してアカウントを有効化してください。')
       }
-    } catch (err: any) {
-      setError(err.message || '認証エラーが発生しました')
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        setError(error.message)
+      } else if (typeof error === 'string') {
+        setError(error)
+      } else {
+        setError('認証エラーが発生しました')
+      }
     } finally {
       setLoading(false)
     }
@@ -81,7 +89,11 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
+            <div className={`p-3 rounded-lg text-sm ${
+              authMode === 'signup' && error.includes('確認メール') 
+                ? 'bg-blue-50 text-blue-600' 
+                : 'bg-red-50 text-red-600'
+            }`}>
               {error}
             </div>
           )}
