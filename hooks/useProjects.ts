@@ -21,7 +21,7 @@ export function useProjects() {
     const fetchProjects = async () => {
       try {
         console.log('🔍 Fetching projects for user:', user.id)
-        
+                
         // 自分がオーナーのプロジェクトを取得
         const { data: ownedProjects, error: ownedError } = await supabase
           .from('projects')
@@ -52,7 +52,7 @@ export function useProjects() {
 
   const createProject = async (name: string, description?: string) => {
     console.log('🚀 createProject called with:', { name, description, user: user?.id })
-    
+        
     if (!user) {
       console.error('❌ User not authenticated')
       throw new Error('User not authenticated')
@@ -60,7 +60,7 @@ export function useProjects() {
 
     try {
       console.log('📝 Inserting project into database...')
-      
+            
       const { data, error } = await supabase
         .from('projects')
         .insert({
@@ -72,7 +72,7 @@ export function useProjects() {
         .single()
 
       console.log('📊 Supabase insert result:', { data, error })
-      
+            
       if (error) {
         console.error('❌ Supabase error details:', {
           message: error.message,
@@ -114,14 +114,45 @@ export function useProjects() {
     return data
   }
 
+  // 🔥 改良: 関連タスクも一括削除する安全なプロジェクト削除
   const deleteProject = async (projectId: string) => {
-    const { error } = await supabase
-      .from('projects')
-      .delete()
-      .eq('id', projectId)
+    console.log('🗑️ Starting project deletion:', projectId)
+    
+    try {
+      // 1. まず関連タスクを一括削除
+      console.log('🗑️ Deleting related tasks...')
+      const { error: tasksError } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('project_id', projectId)
 
-    if (error) throw error
-    setProjects((current) => current.filter((p) => p.id !== projectId))
+      if (tasksError) {
+        console.error('❌ Failed to delete related tasks:', tasksError)
+        throw tasksError
+      }
+      console.log('✅ Related tasks deleted successfully')
+
+      // 2. プロジェクトを削除
+      console.log('🗑️ Deleting project...')
+      const { error: projectError } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId)
+
+      if (projectError) {
+        console.error('❌ Failed to delete project:', projectError)
+        throw projectError
+      }
+      console.log('✅ Project deleted successfully')
+
+      // 3. ローカル状態を更新
+      setProjects((current) => current.filter((p) => p.id !== projectId))
+      
+      return true
+    } catch (error) {
+      console.error('❌ Delete project error:', error)
+      throw error
+    }
   }
 
   return {
@@ -130,6 +161,6 @@ export function useProjects() {
     error,
     createProject,
     updateProject,
-    deleteProject,
+    deleteProject, // 🔥 改良された削除機能
   }
 }

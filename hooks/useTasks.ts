@@ -191,6 +191,27 @@ export function useTasks({ projectId }: UseTasksOptions) {
     }
   }
 
+  // 🔥 新機能: プロジェクト削除時に関連タスクを一括削除
+  const deleteTasksByProject = async (projectId: string) => {
+    console.log('🗑️ Deleting all tasks for project:', projectId)
+    
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('project_id', projectId)
+
+      if (error) throw error
+      
+      console.log('✅ All project tasks deleted successfully')
+      // ローカル状態もクリア
+      setTasks([])
+    } catch (error) {
+      console.error('❌ Delete project tasks error:', error)
+      throw error
+    }
+  }
+
   const moveTask = async (taskId: string, newStatus: Task['status'], newPosition: number) => {
     console.log('🔄 Moving task:', { taskId, newStatus, newPosition })
     
@@ -230,6 +251,7 @@ export function useTasks({ projectId }: UseTasksOptions) {
     createTask,
     updateTask,
     deleteTask,
+    deleteTasksByProject, // 🔥 新機能追加
     moveTask,
   }
 }

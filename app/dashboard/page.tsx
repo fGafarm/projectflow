@@ -10,7 +10,7 @@ import { Plus, FolderOpen } from 'lucide-react'
 
 export default function DashboardPage() {
   const { user, loading: authLoading, signOut } = useAuth()
-  const { projects, loading: projectsLoading, createProject } = useProjects()
+  const { projects, loading: projectsLoading, createProject, deleteProject } = useProjects() // 🔥 deleteProject追加
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
@@ -64,6 +64,31 @@ export default function DashboardPage() {
           console.error('Stack trace:', error.stack)
         }
       }
+    }
+  }
+
+  // 🔥 新機能: プロジェクト削除ハンドラー
+  const handleDeleteProject = async (projectId: string) => {
+    try {
+      console.log('🗑️ プロジェクト削除開始:', projectId)
+      
+      await deleteProject(projectId)
+      
+      console.log('✅ プロジェクト削除成功')
+      
+      // 削除されたプロジェクトが選択中だった場合は別のプロジェクトに切り替え
+      if (selectedProjectId === projectId) {
+        const remainingProjects = projects.filter(p => p.id !== projectId)
+        if (remainingProjects.length > 0) {
+          setSelectedProjectId(remainingProjects[0].id)
+        } else {
+          setSelectedProjectId(null)
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ プロジェクト削除エラー:', error)
+      alert('プロジェクトの削除に失敗しました。再度お試しください。')
     }
   }
 
@@ -176,6 +201,7 @@ export default function DashboardPage() {
           onUpdateTask={updateTask}
           onDeleteTask={deleteTask}
           onMoveTask={moveTask}
+          onDeleteProject={handleDeleteProject} // 🔥 プロジェクト削除機能追加
           onSignOut={signOut}
           userName={user.user_metadata?.name || user.email || 'ユーザー'}
         />

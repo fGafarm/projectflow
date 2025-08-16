@@ -1,8 +1,8 @@
 // components/TaskBoard.tsx
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Calendar, User, Flag, MessageSquare, X, Trash2, LogOut, Edit3, Save, AlertTriangle, Settings, UserPlus, FolderPlus } from 'lucide-react';
+import { Search, Plus, Calendar, User, Flag, MessageSquare, X, Trash2, LogOut, Edit3, Save, AlertTriangle, Settings, UserPlus, FolderPlus, Columns, Palette, PlusCircle } from 'lucide-react';
 
-// 型定義
+// 型定義 - statusは元の型定義を維持
 interface Task {
   id: string;
   project_id: string;
@@ -12,12 +12,20 @@ interface Task {
   assignee: string | null;
   duration: string | null;
   phase: string | null;
-  status: 'todo' | 'in-progress' | 'testing' | 'done' | null;
+  status: 'todo' | 'in-progress' | 'testing' | 'done' | null; // 元の型定義を維持
   notes: string | null;
   tags: string[] | null;
   position: number | null;
   created_at: string;
   updated_at: string;
+}
+
+// カラム定義の型
+interface Column {
+  id: string;
+  title: string;
+  color: string;
+  order: number;
 }
 
 // 新しいタスクの状態型
@@ -28,13 +36,14 @@ type NewTaskState = {
   assignee: string;
   duration: string;
   phase: string;
-  status: 'todo' | 'in-progress' | 'testing' | 'done';
+  status: 'todo' | 'in-progress' | 'testing' | 'done'; // 元の型定義を維持
 };
 
 // 設定の型
 interface ProjectSettings {
   assignees: string[];
   phases: string[];
+  columns?: Column[];
 }
 
 interface TaskBoardProps {
@@ -45,6 +54,7 @@ interface TaskBoardProps {
   onUpdateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
   onDeleteTask: (taskId: string) => Promise<void>;
   onMoveTask: (taskId: string, newStatus: Task['status'], newPosition: number) => Promise<void>;
+  onDeleteProject?: (projectId: string) => Promise<void>;
   onSignOut: () => void;
   userName: string;
 }
@@ -57,13 +67,36 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   onUpdateTask,
   onDeleteTask,
   onMoveTask,
+  onDeleteProject,
   onSignOut,
   userName,
 }) => {
+  // デフォルトカラム設定
+  const defaultColumns: Column[] = [
+    { id: 'todo', title: 'TODO', color: 'from-red-500 to-red-600', order: 0 },
+    { id: 'in-progress', title: 'IN PROGRESS', color: 'from-blue-500 to-blue-600', order: 1 },
+    { id: 'testing', title: 'TESTING', color: 'from-yellow-500 to-yellow-600', order: 2 },
+    { id: 'done', title: 'DONE', color: 'from-green-500 to-green-600', order: 3 },
+  ];
+
+  // 利用可能な色のパレット
+  const colorPalette = [
+    { name: '赤', value: 'from-red-500 to-red-600' },
+    { name: '青', value: 'from-blue-500 to-blue-600' },
+    { name: '緑', value: 'from-green-500 to-green-600' },
+    { name: '黄', value: 'from-yellow-500 to-yellow-600' },
+    { name: '紫', value: 'from-purple-500 to-purple-600' },
+    { name: 'ピンク', value: 'from-pink-500 to-pink-600' },
+    { name: 'インディゴ', value: 'from-indigo-500 to-indigo-600' },
+    { name: 'グレー', value: 'from-gray-500 to-gray-600' },
+  ];
+
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showProjectDeleteConfirm, setShowProjectDeleteConfirm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showColumnSettings, setShowColumnSettings] = useState(false);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPhase, setFilterPhase] = useState('all');
@@ -73,11 +106,14 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   // 設定状態の管理
   const [settings, setSettings] = useState<ProjectSettings>({
     assignees: ['PM', 'BE', 'FE', 'DB', 'OPS', 'QA', 'DE', 'ML', 'SEC'],
-    phases: ['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5']
+    phases: ['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5'],
+    columns: defaultColumns
   });
   const [tempSettings, setTempSettings] = useState<ProjectSettings>(settings);
   const [newAssignee, setNewAssignee] = useState('');
   const [newPhase, setNewPhase] = useState('');
+  const [newColumnName, setNewColumnName] = useState('');
+  const [editingColumn, setEditingColumn] = useState<string | null>(null);
 
   const [newTask, setNewTask] = useState<NewTaskState>({
     title: '',
@@ -86,7 +122,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
     assignee: settings.assignees[0] || 'BE',
     duration: '3日',
     phase: settings.phases[0] || 'Phase 1',
-    status: 'todo',
+    status: 'todo', // デフォルトは'todo'
   });
 
   // 設定をローカルストレージから読み込み
@@ -94,6 +130,9 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
     const savedSettings = localStorage.getItem(`projectSettings_${projectId}`);
     if (savedSettings) {
       const parsed = JSON.parse(savedSettings);
+      if (!parsed.columns) {
+        parsed.columns = defaultColumns;
+      }
       setSettings(parsed);
       setTempSettings(parsed);
     }
@@ -105,21 +144,107 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
       ...prev,
       assignee: settings.assignees[0] || 'BE',
       phase: settings.phases[0] || 'Phase 1',
+      status: 'todo', // デフォルトは'todo'
     }));
   }, [settings]);
 
-  const columns = [
-    { id: 'todo', title: 'TODO', color: 'from-red-500 to-red-600' },
-    { id: 'in-progress', title: 'IN PROGRESS', color: 'from-blue-500 to-blue-600' },
-    { id: 'testing', title: 'TESTING', color: 'from-yellow-500 to-yellow-600' },
-    { id: 'done', title: 'DONE', color: 'from-green-500 to-green-600' },
-  ];
+  // ソート済みのカラムを取得
+  const getSortedColumns = () => {
+    return [...(settings.columns || defaultColumns)].sort((a, b) => a.order - b.order);
+  };
 
   const priorities = [
     { value: 'high', label: 'HIGH', color: 'bg-red-500' },
     { value: 'medium', label: 'MED', color: 'bg-yellow-500' },
     { value: 'low', label: 'LOW', color: 'bg-green-500' },
   ];
+
+  // カラム設定の保存
+  const saveColumnSettings = () => {
+    setSettings(tempSettings);
+    localStorage.setItem(`projectSettings_${projectId}`, JSON.stringify(tempSettings));
+    setShowColumnSettings(false);
+    setEditingColumn(null);
+    setNewColumnName('');
+  };
+
+  // カラム設定のキャンセル
+  const cancelColumnSettings = () => {
+    setTempSettings(settings);
+    setShowColumnSettings(false);
+    setEditingColumn(null);
+    setNewColumnName('');
+  };
+
+  // カラム名の更新
+  const updateColumnTitle = (columnId: string, newTitle: string) => {
+    setTempSettings(prev => ({
+      ...prev,
+      columns: prev.columns?.map(col =>
+        col.id === columnId ? { ...col, title: newTitle } : col
+      ) || defaultColumns
+    }));
+  };
+
+  // カラム色の更新
+  const updateColumnColor = (columnId: string, newColor: string) => {
+    setTempSettings(prev => ({
+      ...prev,
+      columns: prev.columns?.map(col =>
+        col.id === columnId ? { ...col, color: newColor } : col
+      ) || defaultColumns
+    }));
+  };
+
+  // カラムの順序変更
+  const moveColumn = (columnId: string, direction: 'up' | 'down') => {
+    const columns = tempSettings.columns || defaultColumns;
+    const sortedColumns = [...columns].sort((a, b) => a.order - b.order);
+    const currentIndex = sortedColumns.findIndex(col => col.id === columnId);
+    
+    if ((direction === 'up' && currentIndex === 0) || 
+        (direction === 'down' && currentIndex === sortedColumns.length - 1)) {
+      return;
+    }
+
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    const newColumns = [...sortedColumns];
+    [newColumns[currentIndex], newColumns[newIndex]] = [newColumns[newIndex], newColumns[currentIndex]];
+    
+    newColumns.forEach((col, index) => {
+      col.order = index;
+    });
+
+    setTempSettings(prev => ({
+      ...prev,
+      columns: newColumns
+    }));
+  };
+
+  // 新規カラムを追加（注意：新しいカラムは表示のみ、実際のstatusは4つのまま）
+  const addNewColumn = () => {
+    alert('新規カラムの追加は現在開発中です。現時点では、既存の4つのカラムの名前と色の変更のみ可能です。');
+    return;
+  };
+
+  // カラムを削除（注意：削除も現時点では無効）
+  const deleteColumn = (columnId: string) => {
+    alert('カラムの削除は現在開発中です。現時点では、既存の4つのカラムの名前と色の変更のみ可能です。');
+    return;
+  };
+
+  // プロジェクト削除の実行
+  const executeProjectDelete = async () => {
+    if (onDeleteProject) {
+      try {
+        await onDeleteProject(projectId);
+        setShowProjectDeleteConfirm(false);
+      } catch (error) {
+        console.error('プロジェクト削除エラー:', error);
+        alert('プロジェクトの削除に失敗しました');
+      }
+    }
+  };
 
   // 設定の保存
   const saveSettings = () => {
@@ -193,13 +318,17 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
     e.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDrop = async (e: React.DragEvent, newStatus: Task['status']) => {
+  const handleDrop = async (e: React.DragEvent, columnId: string) => {
     e.preventDefault();
-    if (draggedTask && newStatus) {
-      const tasksInColumn = filteredTasks.filter(t => t.status === newStatus);
-      const newPosition = tasksInColumn.length;
-      await onMoveTask(draggedTask.id, newStatus, newPosition);
-      setDraggedTask(null);
+    if (draggedTask) {
+      // カラムIDをstatusに変換（現在は同じ）
+      const newStatus = columnId as Task['status'];
+      if (newStatus) {
+        const tasksInColumn = filteredTasks.filter(t => t.status === newStatus);
+        const newPosition = tasksInColumn.length;
+        await onMoveTask(draggedTask.id, newStatus, newPosition);
+        setDraggedTask(null);
+      }
     }
   };
 
@@ -292,6 +421,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   };
 
   const stats = getProgressStats();
+  const columns = getSortedColumns();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -304,6 +434,24 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
                 <div className="text-3xl">🚀</div>
                 <h1 className="text-2xl font-bold">{projectName}</h1>
                 <div className="ml-auto flex items-center gap-4">
+                  {onDeleteProject && (
+                    <button
+                      onClick={() => setShowProjectDeleteConfirm(true)}
+                      className="flex items-center gap-2 bg-red-500/80 hover:bg-red-500 px-3 py-1 rounded-lg transition-colors"
+                      title="プロジェクト削除"
+                    >
+                      <Trash2 size={16} />
+                      <span className="text-sm">削除</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowColumnSettings(true)}
+                    className="flex items-center gap-2 bg-purple-500/80 hover:bg-purple-500 px-3 py-1 rounded-lg transition-colors"
+                    title="カラム設定"
+                  >
+                    <Columns size={16} />
+                    <span className="text-sm">カラム</span>
+                  </button>
                   <button
                     onClick={() => setShowSettings(true)}
                     className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg transition-colors"
@@ -398,65 +546,225 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
         </div>
       </div>
 
-      {/* タスクボード */}
+      {/* タスクボード - 動的カラム対応 */}
       <div className="max-w-7xl mx-auto px-6 pb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {columns.map(column => (
-            <div
-              key={column.id}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, column.id as Task['status'])}
-            >
-              <div className={`bg-gradient-to-r ${column.color} text-white p-4 text-center font-bold`}>
-                {column.title}
-                <div className="text-sm opacity-90 mt-1">
-                  {getTasksByStatus(column.id as Task['status']).length} タスク
+        <div className={`grid gap-6`} style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}>
+          {columns.map(column => {
+            // カラムIDに対応するstatusを取得（現在は同じ）
+            const columnStatus = column.id as Task['status'];
+            return (
+              <div
+                key={column.id}
+                className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, column.id)}
+              >
+                <div className={`bg-gradient-to-r ${column.color} text-white p-4 text-center font-bold`}>
+                  {column.title}
+                  <div className="text-sm opacity-90 mt-1">
+                    {columnStatus ? getTasksByStatus(columnStatus).length : 0} タスク
+                  </div>
+                </div>
+                
+                <div className="p-4 min-h-96">
+                  {columnStatus && getTasksByStatus(columnStatus).map(task => (
+                    <div
+                      key={task.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, task)}
+                      onClick={() => setSelectedTask(task)}
+                      className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-3 cursor-pointer hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-1 rounded text-xs font-bold text-white ${
+                            priorities.find(p => p.value === task.priority)?.color || 'bg-gray-500'
+                          }`}>
+                            {priorities.find(p => p.value === task.priority)?.label || 'UNKNOWN'}
+                          </span>
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                            {task.phase}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <h3 className="font-semibold text-gray-900 mb-2">{task.title}</h3>
+                      <p className="text-gray-600 text-sm mb-3">{task.description}</p>
+                      
+                      <div className="flex items-center justify-between text-sm text-gray-500">
+                        <div className="flex items-center gap-1">
+                          <User size={14} />
+                          <span>{task.assignee}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Calendar size={14} />
+                          <span>{task.duration}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              
-              <div className="p-4 min-h-96">
-                {getTasksByStatus(column.id as Task['status']).map(task => (
-                  <div
-                    key={task.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, task)}
-                    onClick={() => setSelectedTask(task)}
-                    className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-3 cursor-pointer hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 rounded text-xs font-bold text-white ${
-                          priorities.find(p => p.value === task.priority)?.color || 'bg-gray-500'
-                        }`}>
-                          {priorities.find(p => p.value === task.priority)?.label || 'UNKNOWN'}
-                        </span>
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                          {task.phase}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <h3 className="font-semibold text-gray-900 mb-2">{task.title}</h3>
-                    <p className="text-gray-600 text-sm mb-3">{task.description}</p>
-                    
-                    <div className="flex items-center justify-between text-sm text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <User size={14} />
-                        <span>{task.assignee}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Calendar size={14} />
-                        <span>{task.duration}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
+      {/* カラム設定モーダル */}
+      {showColumnSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-90vh overflow-y-auto shadow-2xl">
+            <div className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Columns size={24} />
+                  <h2 className="text-xl font-bold">カラムカスタマイズ</h2>
+                </div>
+                <button
+                  onClick={cancelColumnSettings}
+                  className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* 注意事項 */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-yellow-800 text-sm">
+                  💡 現在、既存の4つのカラムの名前と色のカスタマイズのみ可能です。
+                </p>
+              </div>
+
+              {/* 既存カラムの編集 */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">カラム設定</h3>
+                <div className="space-y-3">
+                  {[...(tempSettings.columns || defaultColumns)].sort((a, b) => a.order - b.order).map((column, index) => (
+                    <div key={column.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center gap-4">
+                        {/* 順序変更ボタン */}
+                        <div className="flex flex-col gap-1">
+                          <button
+                            onClick={() => moveColumn(column.id, 'up')}
+                            disabled={index === 0}
+                            className="p-1 hover:bg-gray-100 rounded disabled:opacity-30"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            onClick={() => moveColumn(column.id, 'down')}
+                            disabled={index === (tempSettings.columns || defaultColumns).length - 1}
+                            className="p-1 hover:bg-gray-100 rounded disabled:opacity-30"
+                          >
+                            ▼
+                          </button>
+                        </div>
+
+                        {/* カラム名編集 */}
+                        <div className="flex-1">
+                          {editingColumn === column.id ? (
+                            <input
+                              type="text"
+                              value={column.title}
+                              onChange={(e) => updateColumnTitle(column.id, e.target.value)}
+                              className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                              onBlur={() => setEditingColumn(null)}
+                              autoFocus
+                            />
+                          ) : (
+                            <div 
+                              onClick={() => setEditingColumn(column.id)}
+                              className="p-2 hover:bg-gray-50 rounded cursor-pointer font-medium"
+                            >
+                              {column.title}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 色選択 */}
+                        <div className="flex gap-2">
+                          {colorPalette.map(color => (
+                            <button
+                              key={color.value}
+                              onClick={() => updateColumnColor(column.id, color.value)}
+                              className={`w-8 h-8 rounded-lg bg-gradient-to-r ${color.value} ${
+                                column.color === color.value ? 'ring-2 ring-purple-500 ring-offset-2' : ''
+                              }`}
+                              title={color.name}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-6 border-t">
+                <button
+                  onClick={cancelColumnSettings}
+                  className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={saveColumnSettings}
+                  className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  <Save size={20} />
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 以下、既存のモーダル（プロジェクト削除、設定、タスク詳細など）はそのまま */}
+      
+      {/* プロジェクト削除確認ダイアログ */}
+      {showProjectDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl">
+            <div className="bg-gradient-to-r from-red-500 to-red-600 text-white p-6">
+              <div className="flex items-center gap-3">
+                <AlertTriangle size={24} />
+                <h2 className="text-xl font-bold">プロジェクトを削除</h2>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <p className="text-gray-700 mb-4">
+                <strong>「{projectName}」</strong>を削除してもよろしいですか？
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <p className="text-red-700 text-sm">
+                  ⚠️ この操作は取り消せません<br />
+                  ⚠️ プロジェクト内の全タスク（{tasks.length}件）も削除されます
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowProjectDeleteConfirm(false)}
+                  className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={executeProjectDelete}
+                  className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <Trash2 size={20} />
+                  削除する
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 設定モーダル */}
       {showSettings && (
