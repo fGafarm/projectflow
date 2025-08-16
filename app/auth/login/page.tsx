@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 export default function LoginPage() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
@@ -121,6 +122,21 @@ export default function LoginPage() {
             <p className="mb-2">💰 シンプルな料金体系</p>
             <p>基本無料 | 広告で運営 | 画像保存のみ従量課金</p>
           </div>
+        </div>
+
+        {/* 法的リンク - 料金体系の後に追加 */}
+        <div className="mt-4 text-center text-xs text-gray-500">
+          <Link href="/legal/terms" className="hover:text-blue-600">
+            利用規約
+          </Link>
+          <span className="mx-2">|</span>
+          <Link href="/legal/privacy" className="hover:text-blue-600">
+            プライバシーポリシー
+          </Link>
+          <span className="mx-2">|</span>
+          <Link href="/legal/tokushoho" className="hover:text-blue-600">
+            特定商取引法
+          </Link>
         </div>
       </div>
     </div>
