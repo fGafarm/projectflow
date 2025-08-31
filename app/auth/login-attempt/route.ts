@@ -1,7 +1,9 @@
-// app/api/auth/login-attempt/route.ts
+// app/auth/login-attempt/route.ts
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
+import { rateLimit } from '@/lib/security/rate-limit'
+import { sanitizeEmail } from '@/lib/security/sanitize'  // 追加
 
 // 設定値を直接定義
 const SECURITY_CONFIG = {
@@ -13,10 +15,6 @@ const SECURITY_CONFIG = {
 // Supabase URLとキーを環境変数から取得
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
-// デバッグ用（後で削除）
-console.log('Service Key exists:', !!supabaseServiceKey)
-console.log('Service Key length:', supabaseServiceKey?.length)
 
 // サービスロールキーを使用（RLSをバイパス）
 const supabaseAdmin = createClient(
@@ -48,13 +46,31 @@ async function getClientIp() {
 // ログイン試行をチェック
 export async function POST(request: Request) {
   try {
+    // IPアドレスを取得
+    const ip = await getClientIp()
+    
+    // レート制限チェック
+    const rateLimitResult = rateLimit(`api-${ip}`, 20, 60000) // 1分間に20回まで
+    
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { 
+          error: 'Too many requests. Please try again later.',
+          resetTime: rateLimitResult.resetTime 
+        },
+        { status: 429 }
+      )
+    }
+    
     const body = await request.json()
     const { email, action, success } = body
-    const ip = await getClientIp()
     const headersList = await headers()
     const userAgent = headersList.get('user-agent') || 'unknown'
 
-    if (!email) {
+    // メールアドレスをサニタイズ
+    const sanitizedEmail = sanitizeEmail(email || '')
+
+    if (!sanitizedEmail) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 })
     }
 
@@ -64,7 +80,7 @@ export async function POST(request: Request) {
     const { data: attempts, error: fetchError } = await supabaseAdmin
       .from('login_attempts')
       .select('*')
-      .eq('email', email.toLowerCase())
+      .eq('email', sanitizedEmail)  // sanitizedEmailを使用
       .eq('success', false)
       .gte('attempted_at', windowStart.toISOString())
       .order('attempted_at', { ascending: false })
@@ -107,7 +123,7 @@ export async function POST(request: Request) {
       const { error: insertError } = await supabaseAdmin
         .from('login_attempts')
         .insert({
-          email: email.toLowerCase(),
+          email: sanitizedEmail,  // sanitizedEmailを使用
           ip_address: ip,
           success: success || false,
           user_agent: userAgent
@@ -122,7 +138,7 @@ export async function POST(request: Request) {
         await supabaseAdmin
           .from('login_attempts')
           .delete()
-          .eq('email', email.toLowerCase())
+          .eq('email', sanitizedEmail)  // sanitizedEmailを使用
           .eq('success', false)
       }
 

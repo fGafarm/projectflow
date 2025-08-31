@@ -69,10 +69,11 @@ export const config = {
     /*
      * Match all request paths except for the ones starting with:
      * - api (API routes)
+     * - auth/login-attempt (レート制限API) ← これを追加
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api|auth/login-attempt|_next/static|_next/image|favicon.ico).*)',
   ],
 }

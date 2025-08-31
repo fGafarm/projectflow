@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { sanitizeEmail, sanitizeInput } from '@/lib/security/sanitize'  // 追加
 
 export default function LoginPage() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
@@ -18,13 +19,18 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
 
+    // 入力をサニタイズ
+    const sanitizedEmail = sanitizeEmail(formData.email)
+    const sanitizedPassword = formData.password // パスワードはハッシュ化されるのでサニタイズ不要
+    const sanitizedName = sanitizeInput(formData.name)
+
     try {
       if (authMode === 'login') {
-        const { error } = await signIn(formData.email, formData.password)
+        const { error } = await signIn(sanitizedEmail, sanitizedPassword)
         if (error) throw error
         router.push('/dashboard')
       } else {
-        const { error } = await signUp(formData.email, formData.password, formData.name)
+        const { error } = await signUp(sanitizedEmail, sanitizedPassword, sanitizedName)
         if (error) throw error
         setError('確認メールを送信しました。メールを確認してアカウントを有効化してください。')
       }
@@ -60,6 +66,7 @@ export default function LoginPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="山田太郎"
                 required={authMode === 'signup'}
+                maxLength={100}  // 追加：最大長制限
               />
             </div>
           )}
@@ -73,6 +80,7 @@ export default function LoginPage() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="example@email.com"
               required
+              maxLength={255}  // 追加：最大長制限
             />
           </div>
           
@@ -86,6 +94,7 @@ export default function LoginPage() {
               placeholder="••••••••"
               required
               minLength={6}
+              maxLength={100}  // 追加：最大長制限
             />
           </div>
 
